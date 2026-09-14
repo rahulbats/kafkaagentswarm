@@ -1,0 +1,56 @@
+apiVersion: swarm.kafkaagentswarm.io/v1alpha1
+kind: AgentSwarm
+metadata:
+  name: claims-processing-swarm
+  namespace: default
+spec:
+  kafka:
+    brokers:
+      - "localhost:9092"
+  nodes:
+    - name: claims-ingest-agent
+      type: Worker
+      image: agent-runner:v1
+      instructions: "Parse incoming raw insurance claim JSON payload."
+      replicas: 1
+      allowedTools:
+        - "parse_claim_json"
+
+    - name: fraud-detection-agent
+      type: Worker
+      image: agent-runner:v1
+      instructions: "Analyze historical claims patterns for fraud indicators."
+      dependsOn:
+        - claims-ingest-agent
+      replicas: 2
+      allowedTools:
+        - "query_fraud_database"
+        - "calculate_risk_score"
+
+    - name: coverage-verifier-agent
+      type: Worker
+      image: agent-runner:v1
+      instructions: "Check policy limits and deductible balances."
+      dependsOn:
+        - claims-ingest-agent
+      replicas: 2
+      allowedTools:
+        - "get_policy_coverage"
+        - "get_deductible_balance"
+
+    - name: claim-decision-agent
+      type: Worker
+      image: agent-runner:v1
+      instructions: "Aggregate risk score and policy checks into final decision."
+      dependsOn:
+        - fraud-detection-agent
+        - coverage-verifier-agent
+      replicas: 1
+      allowedTools:
+        - "synthesize_claim_summary"
+
+    - name: hitl-payout-approval
+      type: HumanInTheLoop
+      instructions: "Pause execution for human claims adjuster review."
+      dependsOn:
+        - claim-decision-agent

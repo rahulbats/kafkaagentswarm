@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- swarm_v1alpha1_agentswarm.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

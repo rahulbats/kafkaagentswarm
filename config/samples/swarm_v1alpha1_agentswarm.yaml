@@ -1,0 +1,29 @@
+apiVersion: swarm.kafkaagentswarm.io/v1alpha1
+kind: AgentSwarm
+metadata:
+  name: sample-agent-swarm
+  namespace: default
+spec:
+  kafka:
+    brokers:
+      - "localhost:9092"
+  nodes:
+    - name: ingest-agent
+      type: Worker
+      image: busybox:latest
+      instructions: "Consume incoming payload and publish initial metrics"
+      replicas: 1
+      allowedTools:
+        - "parse_json"
+    - name: analyst-agent
+      type: Worker
+      image: busybox:latest
+      instructions: "Perform analytical transformation"
+      dependsOn:
+        - ingest-agent
+      replicas: 2
+    - name: human-approval
+      type: HumanInTheLoop
+      instructions: "Gate execution until user manual review"
+      dependsOn:
+        - analyst-agent
