@@ -96,7 +96,13 @@ func main() {
 		},
 	)
 
-	sseServer := server.NewSSEServer(s, server.WithBaseURL("http://0.0.0.0:8000"))
+	// The base URL has to be the address clients actually connect through
+	// (the k8s Service DNS name from k8s/mcp-deployment.yaml - see
+	// swarm.yaml's mcpServices), not the bind-all listen address: the
+	// server announces this as its message endpoint on connect, and MCP
+	// clients validate that the announced origin matches the one they
+	// connected to, rejecting "http://0.0.0.0:8000" as a mismatch.
+	sseServer := server.NewSSEServer(s, server.WithBaseURL("http://mcp-claims-server:8000"))
 	log.Println("MCP Server listening on :8000...")
 	if err := http.ListenAndServe(":8000", sseServer); err != nil {
 		log.Fatalf("Server error: %v", err)

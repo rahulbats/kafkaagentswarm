@@ -50,8 +50,9 @@ make run
 # Terminal 2: Navigate to repo root
 cd kafkaagentswarm
 
-# Build the MCP Claims Server image
-docker build -t mcp-claims-server:v1 ./examples/claims-processing/mcp-server
+# Build the MCP Claims Server image (context is the repo root: it's part
+# of the root Go module, not a standalone one)
+docker build -t mcp-claims-server:v1 -f examples/claims-processing/mcp-server/Dockerfile .
 
 # Build the generic Go Agent Runner image
 docker build -t agent-runner:v1 -f Dockerfile.runner .

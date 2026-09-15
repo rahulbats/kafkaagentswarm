@@ -194,9 +194,11 @@ func (h *agentHandler) systemPrompt() string {
 	return fmt.Sprintf(
 		"You are the %q step in a Kafka-coordinated multi-agent pipeline. %s\n\n"+
 			"You will be given the task so far as a JSON object. Use your available tools as needed to "+
-			"complete your part of the task. When you are done, reply with a final JSON object (make no "+
-			"further tool call) containing your result - it will be merged into the data handed to the "+
-			"next step(s) in the pipeline.",
+			"complete your part of the task, but never call the same tool with the same arguments more "+
+			"than once - you already have its result. As soon as you have everything you need, stop "+
+			"calling tools and reply with your final answer: a single JSON object, and nothing else - no "+
+			"markdown code fences, no commentary before or after it. That final object is merged into the "+
+			"data handed to the next step(s) in the pipeline, so include every field you want them to see.",
 		h.cfg.nodeName, h.cfg.instructions,
 	)
 }
@@ -260,18 +262,60 @@ func (h *agentHandler) callToolForAgent(ctx context.Context, tc toolCall) string
 }
 
 // mergeFinalAnswer folds the agent's final answer into the outgoing data.
-// If the answer parses as a JSON object its fields are merged in (the
+// If the answer contains a JSON object its fields are merged in (the
 // expected case, per the instruction in systemPrompt); otherwise it's kept
 // verbatim under a "result" key rather than discarded.
 func mergeFinalAnswer(data map[string]any, content string) map[string]any {
 	out := make(map[string]any, len(data)+1)
 	maps.Copy(out, data)
 
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
+	if parsed, ok := extractJSONObject(content); ok {
 		maps.Copy(out, parsed)
 	} else if content != "" {
 		out["result"] = content
 	}
 	return out
+}
+
+// extractJSONObject finds a JSON object in the agent's final answer. Models
+// - especially smaller/local ones - don't reliably follow "reply with only
+// JSON": a real answer seen in testing was wrapped in a markdown code fence
+// with prose both before and after it. This tries, in order: the content
+// as-is, the contents of a ```-fenced block (with or without a "json" tag),
+// and finally the substring from the first '{' to the last '}' in the
+// content - broad, but this runner only ever expects one JSON object per
+// answer, so a stray brace elsewhere in the prose is an acceptable risk
+// against silently losing the whole answer.
+func extractJSONObject(content string) (map[string]any, bool) {
+	if parsed, ok := tryUnmarshalObject(content); ok {
+		return parsed, true
+	}
+
+	if _, rest, ok := strings.Cut(content, "```"); ok {
+		rest = strings.TrimPrefix(rest, "json")
+		rest = strings.TrimPrefix(rest, "\n")
+		if fenced, _, ok := strings.Cut(rest, "```"); ok {
+			if parsed, ok := tryUnmarshalObject(fenced); ok {
+				return parsed, true
+			}
+		}
+	}
+
+	if start := strings.Index(content, "{"); start != -1 {
+		if end := strings.LastIndex(content, "}"); end > start {
+			if parsed, ok := tryUnmarshalObject(content[start : end+1]); ok {
+				return parsed, true
+			}
+		}
+	}
+
+	return nil, false
+}
+
+func tryUnmarshalObject(s string) (map[string]any, bool) {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(s)), &parsed); err != nil {
+		return nil, false
+	}
+	return parsed, true
 }

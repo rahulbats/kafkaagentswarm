@@ -38,19 +38,27 @@ func (h *agentHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sara
 				h.cfg.nodeName, env.CorrelationID, err)
 		}
 
-		// The contribution is now safe - either it's durably recorded in
-		// JOIN_STATE_TOPIC, or (for a non-join node) there was nothing to
-		// record beyond the message itself. Either way it's fine to commit
-		// this offset even though the actual task (agent loop + publish)
-		// hasn't run yet: if that fails, completeCorrelation exits the
-		// process, and on restart a fan-in join is recovered from
-		// JOIN_STATE_TOPIC (see hydrateJoinState in main), while a
-		// straight-through node's task is small enough to just be
-		// re-triggered by whatever originally produced this message.
-		sess.MarkMessage(msg, "")
+		// A fan-in node's contribution is now durably recorded in
+		// JOIN_STATE_TOPIC (independent of whether the join is complete),
+		// so it's safe to mark right away - a crash later on for a
+		// *different, still-incomplete* correlation ID sharing this
+		// partition must not block this one's offset from advancing (see
+		// join()'s doc comment). A straight-through node has nothing
+		// durably recorded yet at this point, so marking here would be
+		// wrong: Kafka never redelivers a committed offset, so a crash
+		// during the agent loop below would silently lose this task
+		// forever instead of retrying it. That one is marked only after
+		// completeCorrelation actually succeeds.
+		isFanIn := len(h.cfg.dependsOn) > 1
+		if isFanIn {
+			sess.MarkMessage(msg, "")
+		}
 
 		if ready {
 			h.completeCorrelation(env.CorrelationID, merged)
+			if !isFanIn {
+				sess.MarkMessage(msg, "")
+			}
 		}
 	}
 	return nil
