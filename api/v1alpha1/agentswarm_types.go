@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -35,6 +36,29 @@ type MCPEndpoint struct {
 	URL  string `json:"url"`
 }
 
+// LLMConfig points an agent node at an OpenAI-compatible chat-completions
+// endpoint it uses to drive its instructions+tool-use loop.
+type LLMConfig struct {
+	// baseURL is an OpenAI-compatible chat-completions endpoint. Defaults to
+	// a local Ollama server; point this at any OpenAI-compatible endpoint
+	// (a local MLX server, a hosted provider that speaks the OpenAI API,
+	// etc.) to use something else.
+	// +kubebuilder:default="http://localhost:11434/v1"
+	// +optional
+	BaseURL string `json:"baseURL,omitempty"`
+
+	// model is the model name requested from baseURL.
+	// +kubebuilder:default="llama3.1"
+	// +optional
+	Model string `json:"model,omitempty"`
+
+	// apiKeySecretRef optionally references a Secret key holding a bearer
+	// token for baseURL. Local servers (Ollama, MLX, ...) usually don't need
+	// one; set this for a hosted OpenAI-compatible provider that does.
+	// +optional
+	APIKeySecretRef *corev1.SecretKeySelector `json:"apiKeySecretRef,omitempty"`
+}
+
 // AgentNode defines a single DAG node execution unit
 type AgentNode struct {
 	Name         string        `json:"name"`
@@ -45,6 +69,11 @@ type AgentNode struct {
 	Replicas     int32         `json:"replicas,omitempty"`
 	MCPServices  []MCPEndpoint `json:"mcpServices,omitempty"`
 	AllowedTools []string      `json:"allowedTools,omitempty"`
+
+	// llm configures the OpenAI-compatible endpoint this node's agent loop
+	// calls. Defaults to a local Ollama server if left unset.
+	// +optional
+	LLM LLMConfig `json:"llm,omitempty"`
 }
 
 // KafkaConfig defines access configuration for the external Kafka cluster

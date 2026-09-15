@@ -6,7 +6,7 @@ metadata:
 spec:
   kafka:
     brokers:
-      - "localhost:9092"
+      - "host.k3d.internal:9092"
   nodes:
     - name: claims-ingest-agent
       type: Worker
@@ -15,6 +15,15 @@ spec:
       replicas: 1
       allowedTools:
         - "parse_claim_json"
+      mcpServices:
+        - name: claims-tools
+          url: "http://mcp-claims-server:8000/sse"
+      llm:
+        baseURL: "http://host.k3d.internal:8001/v1"
+        model: "Qwen3.8-27B-4bit"
+        apiKeySecretRef:
+          name: llm-credentials
+          key: api-key
 
     - name: fraud-detection-agent
       type: Worker
@@ -26,6 +35,15 @@ spec:
       allowedTools:
         - "query_fraud_database"
         - "calculate_risk_score"
+      mcpServices:
+        - name: claims-tools
+          url: "http://mcp-claims-server:8000/sse"
+      llm:
+        baseURL: "http://host.k3d.internal:8001/v1"
+        model: "Qwen3.8-27B-4bit"
+        apiKeySecretRef:
+          name: llm-credentials
+          key: api-key
 
     - name: coverage-verifier-agent
       type: Worker
@@ -37,6 +55,15 @@ spec:
       allowedTools:
         - "get_policy_coverage"
         - "get_deductible_balance"
+      mcpServices:
+        - name: claims-tools
+          url: "http://mcp-claims-server:8000/sse"
+      llm:
+        baseURL: "http://host.k3d.internal:8001/v1"
+        model: "Qwen3.8-27B-4bit"
+        apiKeySecretRef:
+          name: llm-credentials
+          key: api-key
 
     - name: claim-decision-agent
       type: Worker
@@ -48,6 +75,15 @@ spec:
       replicas: 1
       allowedTools:
         - "synthesize_claim_summary"
+      mcpServices:
+        - name: claims-tools
+          url: "http://mcp-claims-server:8000/sse"
+      llm:
+        baseURL: "http://host.k3d.internal:8001/v1"
+        model: "Qwen3.8-27B-4bit"
+        apiKeySecretRef:
+          name: llm-credentials
+          key: api-key
 
     - name: hitl-payout-approval
       type: HumanInTheLoop

@@ -18,10 +18,14 @@ func main() {
 	)
 
 	// 1. Ingestion Tool
+	// raw_json is intentionally optional: by the time a worker calls a tool,
+	// the swarm runner has already parsed the Kafka message into structured
+	// fields (see cmd/runner), so there's no separate raw string blob to
+	// hand this tool - it just marks that ingestion happened.
 	s.AddTool(
 		mcp.NewTool("parse_claim_json",
 			mcp.WithDescription("Parse raw claim JSON payload"),
-			mcp.WithString("raw_json", mcp.Required(), mcp.Description("Raw JSON input")),
+			mcp.WithString("raw_json", mcp.Description("Raw JSON input, if available")),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return mcp.NewToolResultText(`{"status": "parsed", "claim_id": "CLM-9901", "policy_id": "POL-441"}`), nil
@@ -42,10 +46,15 @@ func main() {
 	s.AddTool(
 		mcp.NewTool("calculate_risk_score",
 			mcp.WithDescription("Calculate risk score based on claim amount"),
-			mcp.WithNumber("claim_amount", mcp.Required(), mcp.Description("Claim dollar amount")),
+			// Named "amount" to match the field the claim payload already
+			// carries (see swarm.yaml's Trigger Pipeline Execution step),
+			// rather than requiring a separate rename step.
+			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Claim dollar amount")),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultText(`{"risk_score": 0.12, "rating": "LOW"}`), nil
+			// fraud_status is what claim-decision-agent's synthesize_claim_summary
+			// tool expects downstream - carried alongside the raw score/rating.
+			return mcp.NewToolResultText(`{"risk_score": 0.12, "rating": "LOW", "fraud_status": "LOW"}`), nil
 		},
 	)
 
@@ -56,7 +65,9 @@ func main() {
 			mcp.WithString("policy_id", mcp.Required(), mcp.Description("Target Policy ID")),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultText(`{"active": true, "max_coverage": 50000}`), nil
+			// coverage_status is what claim-decision-agent's synthesize_claim_summary
+			// tool expects downstream - carried alongside the raw coverage details.
+			return mcp.NewToolResultText(`{"active": true, "max_coverage": 50000, "coverage_status": "ACTIVE"}`), nil
 		},
 	)
 

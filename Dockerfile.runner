@@ -11,8 +11,9 @@ RUN go mod download
 # Copy source files
 COPY . .
 
-# Build the runner binary explicitly pointing to cmd/runner/main.go
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o agent-runner cmd/runner/main.go
+# Build the runner binary from the cmd/runner package (split across several
+# files - main.go, agent.go, envelope.go, handler.go, join.go, mcp.go)
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o agent-runner ./cmd/runner
 
 # Minimal runtime image
 FROM gcr.io/distroless/static:nonroot

@@ -1,0 +1,62 @@
+apiVersion: swarm.flinkswarm.io/v1alpha1
+kind: AgentSwarm
+metadata:
+  name: claims-processing-swarm
+  namespace: default
+spec:
+  kafka:
+    brokers:
+      - "localhost:9092"
+  nodes:
+    # 1. Ingestion Node: Parses claim submission and routes to analytical branches
+    - name: claims-ingest-agent
+      type: Worker
+      image: busybox:latest
+      instructions: "Parse incoming raw insurance claim JSON payload, extract claim ID, policy ID, and loss details."
+      replicas: 1
+      allowedTools:
+        - "parse_claim_json"
+        - "verify_policy_active"
+
+    # 2. Parallel Branch A: Fraud Detection (Tool Scoped)
+    - name: fraud-detection-agent
+      type: Worker
+      image: busybox:latest
+      instructions: "Analyze historical claims patterns and flag potential fraud indicators."
+      dependsOn:
+        - claims-ingest-agent
+      replicas: 2
+      allowedTools:
+        - "query_fraud_database"
+        - "calculate_risk_score"
+
+    # 3. Parallel Branch B: Policy Coverage Verification (Tool Scoped)
+    - name: coverage-verifier-agent
+      type: Worker
+      image: busybox:latest
+      instructions: "Check policy limits, deductibles, and endorsement exclusions for the submitted loss type."
+      dependsOn:
+        - claims-ingest-agent
+      replicas: 2
+      allowedTools:
+        - "get_policy_coverage"
+        - "get_deductible_balance"
+
+    # 4. Fan-In Aggregator: Combines Fraud Risk + Coverage output to synthesize final decision
+    - name: claim-decision-agent
+      type: Worker
+      image: busybox:latest
+      instructions: "Aggregate fraud score and coverage verification to produce recommended payout amount and rationale."
+      dependsOn:
+        - fraud-detection-agent
+        - coverage-verifier-agent
+      replicas: 1
+      allowedTools:
+        - "synthesize_claim_summary"
+
+    # 5. Human-In-The-Loop Gate: Halts downstream payout execution for human review
+    - name: hitl-payout-approval
+      type: HumanInTheLoop
+      instructions: "Pause automated execution. Require explicit adjuster sign-off before triggering payout wire."
+      dependsOn:
+        - claim-decision-agent

@@ -66,6 +66,51 @@ spec:
                       type: string
                     instructions:
                       type: string
+                    llm:
+                      description: |-
+                        llm configures the OpenAI-compatible endpoint this node's agent loop
+                        calls. Defaults to a local Ollama server if left unset.
+                      properties:
+                        apiKeySecretRef:
+                          description: |-
+                            apiKeySecretRef optionally references a Secret key holding a bearer
+                            token for baseURL. Local servers (Ollama, MLX, ...) usually don't need
+                            one; set this for a hosted OpenAI-compatible provider that does.
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must
+                                be a valid secret key.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must
+                                be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        baseURL:
+                          default: http://localhost:11434/v1
+                          description: |-
+                            baseURL is an OpenAI-compatible chat-completions endpoint. Defaults to
+                            a local Ollama server; point this at any OpenAI-compatible endpoint
+                            (a local MLX server, a hosted provider that speaks the OpenAI API,
+                            etc.) to use something else.
+                          type: string
+                        model:
+                          default: llama3.1
+                          description: model is the model name requested from baseURL.
+                          type: string
+                      type: object
                     mcpServices:
                       items:
                         description: MCPEndpoint defines shared MCP server service
