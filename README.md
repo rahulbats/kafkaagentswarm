@@ -1,8 +1,10 @@
 # kafkaagentswarm
-// TODO(user): Add simple overview of use/purpose
+
+A Kubernetes operator for running multi-agent AI workflows as a DAG of Kafka-connected workers, with no central coordinator process.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+Most agent-swarm frameworks route every step through a central orchestrator: a process that holds the workflow state, decides which agent runs next, and hands off results between them. That coordinator is a single point of failure and a scaling bottleneck — every agent's throughput is capped by how fast the coordinator can dispatch work, and if it goes down, the whole swarm stalls mid-task. This project takes the position (explored in [this write-up](https://medium.com/@rahulbats/agent-swarms-on-kafka-coordination-without-a-coordinator-d358c61196b4)) that coordination logic belongs in the messaging layer, not in a bespoke controller process: each agent is an independent Kafka consumer/producer that reacts to events on its input topic and emits results to its output topic, and the *topology* — who talks to whom — is just the topic wiring between them. `kafkaagentswarm` implements this as a Kubernetes CRD (`AgentSwarm`): you declare a DAG of nodes (with `dependsOn` edges for fan-out/fan-in, and `HumanInTheLoop` nodes as manual-approval gates), and the operator reconciles that spec into Kafka topics and worker Deployments — no coordinator service to run, deploy, or fail.
 
 ## Getting Started
 
