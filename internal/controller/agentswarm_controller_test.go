@@ -21,14 +21,39 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/IBM/sarama"
+
 	swarmv1alpha1 "github.com/rahulbats/kafkaagentswarm/api/v1alpha1"
 )
+
+// fakeKafkaAdmin is a no-op kafkaAdmin: envtest has no real Kafka broker for
+// the reconciler to dial, so tests substitute this in place of a real
+// Sarama cluster admin (see AgentSwarmReconciler.NewKafkaAdmin).
+type fakeKafkaAdmin struct {
+	topics map[string]sarama.TopicDetail
+}
+
+func newFakeKafkaAdmin() *fakeKafkaAdmin {
+	return &fakeKafkaAdmin{topics: map[string]sarama.TopicDetail{}}
+}
+
+func (f *fakeKafkaAdmin) ListTopics() (map[string]sarama.TopicDetail, error) {
+	return f.topics, nil
+}
+
+func (f *fakeKafkaAdmin) CreateTopic(topic string, detail *sarama.TopicDetail, _ bool) error {
+	f.topics[topic] = *detail
+	return nil
+}
+
+func (f *fakeKafkaAdmin) Close() error { return nil }
 
 var _ = Describe("AgentSwarm Controller", func() {
 	Context("When reconciling a resource", func() {
@@ -54,14 +79,24 @@ var _ = Describe("AgentSwarm Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: swarmv1alpha1.AgentSwarmSpec{
+						Kafka: swarmv1alpha1.KafkaConfig{
+							Brokers: []string{"localhost:9092"},
+						},
+						Nodes: []swarmv1alpha1.AgentNode{
+							{
+								Name:  "ingest-agent",
+								Type:  swarmv1alpha1.NodeTypeWorker,
+								Image: "agent-runner:v1",
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &swarmv1alpha1.AgentSwarm{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
@@ -74,14 +109,25 @@ var _ = Describe("AgentSwarm Controller", func() {
 			controllerReconciler := &AgentSwarmReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
+				// envtest has no real Kafka broker to dial; substitute a
+				// fake so the reconciler's topic-provisioning logic still
+				// runs (and can be asserted on) without one.
+				NewKafkaAdmin: func(brokers []string) (kafkaAdmin, error) {
+					return newFakeKafkaAdmin(), nil
+				},
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("creating a Deployment for the Worker node")
+			deployment := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      resourceName + "-ingest-agent",
+				Namespace: resourceNamespace,
+			}, deployment)).To(Succeed())
 		})
 	})
 })

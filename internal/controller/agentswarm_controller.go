@@ -36,10 +36,25 @@ import (
 	swarmv1alpha1 "github.com/rahulbats/kafkaagentswarm/api/v1alpha1"
 )
 
+// kafkaAdmin is the subset of sarama.ClusterAdmin this controller actually
+// uses. Narrowed down (Sarama's real interface has 30+ methods) so tests can
+// substitute a fake here instead of needing a real Kafka broker.
+type kafkaAdmin interface {
+	ListTopics() (map[string]sarama.TopicDetail, error)
+	CreateTopic(topic string, detail *sarama.TopicDetail, validateOnly bool) error
+	Close() error
+}
+
 // AgentSwarmReconciler reconciles a AgentSwarm object
 type AgentSwarmReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+
+	// NewKafkaAdmin constructs the Kafka admin client used to provision
+	// topics. Defaults to a real Sarama cluster admin (see
+	// newSaramaClusterAdmin); tests set this to a fake instead of needing a
+	// real broker reachable from envtest.
+	NewKafkaAdmin func(brokers []string) (kafkaAdmin, error)
 }
 
 // +kubebuilder:rbac:groups=swarm.kafkaagentswarm.io,resources=agentswarms,verbs=get;list;watch;create;update;patch;delete
@@ -64,7 +79,11 @@ func (r *AgentSwarmReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	logger.Info("Reconciling AgentSwarm", "name", swarm.Name)
 
 	// 2. Initialize Kafka Admin Client
-	admin, err := r.newKafkaAdmin(swarm.Spec.Kafka.Brokers)
+	newAdmin := r.NewKafkaAdmin
+	if newAdmin == nil {
+		newAdmin = newSaramaClusterAdmin
+	}
+	admin, err := newAdmin(swarm.Spec.Kafka.Brokers)
 	if err != nil {
 		logger.Error(err, "Failed to connect to Kafka brokers", "brokers", swarm.Spec.Kafka.Brokers)
 		return ctrl.Result{}, err
@@ -146,19 +165,19 @@ func (r *AgentSwarmReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 // ensureKafkaTopic checks and creates the required topic using Sarama ClusterAdmin
-func (r *AgentSwarmReconciler) ensureKafkaTopic(admin sarama.ClusterAdmin, topicName string) error {
+func (r *AgentSwarmReconciler) ensureKafkaTopic(admin kafkaAdmin, topicName string) error {
 	return r.ensureTopic(admin, topicName, nil)
 }
 
 // ensureCompactedTopic creates a log-compacted topic, used as durable
 // key-value storage (Kafka's "changelog topic" pattern) rather than an
 // ordered event stream - only the latest value per key is retained.
-func (r *AgentSwarmReconciler) ensureCompactedTopic(admin sarama.ClusterAdmin, topicName string) error {
+func (r *AgentSwarmReconciler) ensureCompactedTopic(admin kafkaAdmin, topicName string) error {
 	compact := "compact"
 	return r.ensureTopic(admin, topicName, map[string]*string{"cleanup.policy": &compact})
 }
 
-func (r *AgentSwarmReconciler) ensureTopic(admin sarama.ClusterAdmin, topicName string, configEntries map[string]*string) error {
+func (r *AgentSwarmReconciler) ensureTopic(admin kafkaAdmin, topicName string, configEntries map[string]*string) error {
 	topics, err := admin.ListTopics()
 	if err != nil {
 		return err
@@ -272,7 +291,9 @@ func encodeMCPEndpoints(endpoints []swarmv1alpha1.MCPEndpoint) string {
 	return strings.Join(pairs, ",")
 }
 
-func (r *AgentSwarmReconciler) newKafkaAdmin(brokers []string) (sarama.ClusterAdmin, error) {
+// newSaramaClusterAdmin is the production NewKafkaAdmin implementation - a
+// real Sarama cluster admin dialing the given brokers.
+func newSaramaClusterAdmin(brokers []string) (kafkaAdmin, error) {
 	config := sarama.NewConfig()
 	config.Version = sarama.V3_0_0_0
 	return sarama.NewClusterAdmin(brokers, config)
